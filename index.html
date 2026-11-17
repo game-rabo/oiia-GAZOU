@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アトリエ・ラーン — 学習できる画像生成AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#eef0f6; --card:#fbfbfe; --ink:#1d2140; --sub:#5d6385; --line:#d5d9e8;
+  --cobalt:#3b4cca; --cobalt-d:#2c3aa3; --mint:#17a583; --amber:#ffb84d; --danger:#d2455b;
+  --r:14px;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:"Zen Kaku Gothic New",system-ui,-apple-system,"Hiragino Sans","Yu Gothic",sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;min-height:100vh}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+header{display:flex;align-items:center;gap:20px;padding:14px 24px;background:var(--ink);color:#fff;flex-wrap:wrap;position:sticky;top:0;z-index:20}
+header h1{font-size:20px;font-weight:900;margin:0;letter-spacing:.04em}
+header h1 small{display:block;font-size:11px;font-weight:500;opacity:.65;letter-spacing:.02em}
+nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+nav button{background:transparent;border:0;color:#cfd3ee;padding:8px 16px;border-radius:999px;font-weight:700}
+nav button[aria-selected="true"]{background:#fff;color:var(--ink)}
+nav button:hover:not([aria-selected="true"]){background:rgba(255,255,255,.12)}
+.layout{display:grid;grid-template-columns:280px 1fr;gap:24px;padding:24px;max-width:1280px;margin:0 auto}
+@media(max-width:860px){.layout{grid-template-columns:1fr;padding:14px}}
+aside{align-self:start;position:sticky;top:76px}
+@media(max-width:860px){aside{position:static}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px}
+.panel+.panel{margin-top:16px}
+h2{font-size:17px;margin:0 0 4px;font-weight:900}
+.hint{color:var(--sub);font-size:13px;margin:0 0 14px}
+label{display:block;font-weight:700;font-size:13px;margin:14px 0 6px}
+input[type=text],input[type=password],select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+textarea{min-height:96px;resize:vertical}
+.btn{border:0;border-radius:10px;padding:10px 18px;font-weight:700;background:var(--cobalt);color:#fff}
+.btn:hover{background:var(--cobalt-d)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--cobalt);border:1px solid var(--cobalt)}
+.btn.ghost:hover{background:#e8ebfb}
+.btn.danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
+.btn.danger:hover{background:#fdecef}
+.btn.sm{padding:6px 12px;font-size:13px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row.end{justify-content:flex-end}
+/* model shelf */
+.models{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.model{display:flex;gap:10px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:pointer;text-align:left;width:100%}
+.model[aria-pressed="true"]{border-color:var(--cobalt);box-shadow:0 0 0 2px #cdd3f6}
+.model .th{width:48px;height:48px;border-radius:8px;background:#e3e6f3 center/cover;flex:none}
+.model b{display:block;font-size:14px;line-height:1.3}
+.model span{font-size:12px;color:var(--sub)}
+.model .x{margin-left:auto;border:0;background:transparent;color:var(--sub);font-size:18px;padding:4px 8px;border-radius:8px}
+.model .x:hover{background:#fdecef;color:var(--danger)}
+.empty{color:var(--sub);font-size:13px;padding:12px;border:1px dashed var(--line);border-radius:12px;text-align:center}
+/* drop zone */
+.drop{border:2px dashed #aeb5dc;border-radius:var(--r);padding:22px;text-align:center;background:#f4f5fc;cursor:pointer;color:var(--sub)}
+.drop.over{background:#e5e8fb;border-color:var(--cobalt)}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px;margin-top:12px}
+.thumb{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#dfe2f0}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb button{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;border:0;background:rgba(29,33,64,.8);color:#fff;line-height:1}
+/* progress */
+.steps{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:8px}
+.steps li{display:flex;gap:10px;align-items:center;color:var(--sub);font-size:14px}
+.steps li i{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);flex:none}
+.steps li.run{color:var(--ink);font-weight:700}
+.steps li.run i{border-color:var(--cobalt);border-top-color:transparent;animation:spin .8s linear infinite}
+.steps li.done{color:var(--mint)}
+.steps li.done i{background:var(--mint);border-color:var(--mint)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.profile{white-space:pre-wrap;font-size:13px;background:#f1f3fa;border-radius:10px;padding:12px;max-height:240px;overflow:auto;margin:10px 0 0}
+.badge{display:inline-block;background:#dff5ee;color:#0d7a5f;font-size:12px;font-weight:700;border-radius:999px;padding:2px 10px}
+/* generate */
+.stage{display:grid;grid-template-columns:1fr;gap:16px}
+.canvas{min-height:320px;border-radius:var(--r);background:#e3e6f3;display:grid;place-items:center;overflow:hidden;position:relative}
+.canvas img{max-width:100%;max-height:70vh;display:block}
+.canvas .ph{color:var(--sub);text-align:center;padding:20px}
+.versions{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.versions button{flex:none;width:64px;height:64px;border-radius:10px;border:2px solid transparent;padding:0;overflow:hidden;background:#dfe2f0}
+.versions button[aria-current="true"]{border-color:var(--cobalt)}
+.versions img{width:100%;height:100%;object-fit:cover;display:block}
+.photo-chip{display:flex;gap:10px;align-items:center;margin-top:8px}
+.photo-chip img{width:56px;height:56px;border-radius:8px;object-fit:cover}
+/* library */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.card{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;padding:0;text-align:left}
+.card img{width:100%;aspect-ratio:1;object-fit:cover;display:block}
+.card div{padding:8px 10px;font-size:12px;color:var(--sub)}
+.card div b{display:block;color:var(--ink);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+dialog{border:0;border-radius:var(--r);padding:0;max-width:min(920px,94vw);width:100%;background:var(--card);color:var(--ink)}
+dialog::backdrop{background:rgba(29,33,64,.6)}
+dialog .in{padding:18px;display:grid;gap:12px}
+dialog img{max-width:100%;max-height:62vh;margin:0 auto;display:block;border-radius:10px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:999px;font-size:14px;z-index:50;max-width:90vw}
+.toast.err{background:var(--danger)}
+.err-box{background:#fdecef;color:#8c1f33;border-radius:10px;padding:10px 12px;font-size:13px;margin-top:12px;white-space:pre-wrap;word-break:break-word}
+[hidden]{display:none!important}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>アトリエ・ラーン<small>画像から学習して、あなた専用の画像生成AIを育てる</small></h1>
+  <nav role="tablist" aria-label="メニュー">
+    <button role="tab" data-tab="train" aria-selected="true">学習する</button>
+    <button role="tab" data-tab="gen" aria-selected="false">生成する</button>
+    <button role="tab" data-tab="lib" aria-selected="false">ライブラリ</button>
+    <button role="tab" data-tab="set" aria-selected="false">しくみ</button>
+  </nav>
+</header>
+
+<div class="layout">
+  <aside>
+    <div class="panel">
+      <h2>学習済みモデル</h2>
+      <p class="hint">選んだモデルが「生成する」で使われます。</p>
+      <ul class="models" id="modelList"></ul>
+    </div>
+  </aside>
+
+  <main>
+    <!-- 学習 -->
+    <section id="tab-train">
+      <div class="panel">
+        <h2>新しいAIモデルを学習させる</h2>
+        <p class="hint">好きな絵柄・キャラ・写真の雰囲気が分かる画像を読み込み、何を学習してほしいかを書きます。</p>
+
+        <label for="trainTarget">学習の対象</label>
+        <select id="trainTarget"><option value="">新しいモデルを作る</option></select>
+
+        <label for="trainName">モデルの名前</label>
+        <input type="text" id="trainName" placeholder="例: 水彩の猫イラスト">
+
+        <label>学習させる画像(1〜12枚)</label>
+        <div class="drop" id="trainDrop" tabindex="0" role="button" aria-label="画像を選ぶ">画像をここにドロップ、またはクリックして選択</div>
+        <input type="file" id="trainFile" accept="image/*" multiple hidden>
+        <div class="thumbs" id="trainThumbs"></div>
+
+        <label for="trainPrompt">学習プロンプト(何を学んでほしいか)</label>
+        <textarea id="trainPrompt" placeholder="例: やわらかい線と淡い水彩の塗り。猫の目は大きく、背景は余白を多めに。"></textarea>
+
+        <div class="row" style="margin-top:16px">
+          <button class="btn" id="trainBtn">学習を開始</button>
+          <span class="hint" style="margin:0">画像の特徴をAIが読み取り、モデルとして保存します。</span>
+        </div>
+        <ul class="steps" id="trainSteps" hidden>
+          <li data-s="0"><i></i>画像を読み込み中</li>
+          <li data-s="1"><i></i>共通する特徴を学習中</li>
+          <li data-s="2"><i></i>モデルを保存中</li>
+        </ul>
+        <div class="err-box" id="trainErr" hidden></div>
+      </div>
+      <div class="panel" id="trainResult" hidden>
+        <h2>学習が完了しました <span class="badge" id="trainVer"></span></h2>
+        <p class="hint" id="trainSummary"></p>
+        <div class="profile" id="trainProfile"></div>
+        <div class="row" style="margin-top:12px"><button class="btn" id="goGen">このモデルで生成する</button></div>
+      </div>
+    </section>
+
+    <!-- 生成 -->
+    <section id="tab-gen" hidden>
+      <div class="panel">
+        <h2>画像を生成する</h2>
+        <p class="hint" id="genModelHint">モデル未選択です。左の一覧から選ぶと、学習した特徴が反映されます。</p>
+
+        <label for="genPrompt">プロンプト</label>
+        <textarea id="genPrompt" placeholder="例: 窓辺で眠る三毛猫、朝の光"></textarea>
+
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:1;min-width:150px">
+            <label for="genAr">縦横比</label>
+            <select id="genAr">
+              <option>1:1</option><option>3:4</option><option>4:3</option><option>9:16</option><option>16:9</option>
+            </select>
+          </div>
+          <div>
+            <button class="btn ghost" id="genPhotoBtn">写真を読み込む</button>
+            <input type="file" id="genPhotoFile" accept="image/*" hidden>
+          </div>
+        </div>
+        <div class="photo-chip" id="genPhotoChip" hidden>
+          <img id="genPhotoImg" alt="読み込んだ写真">
+          <span class="hint" style="margin:0">この写真をもとに生成します</span>
+          <button class="btn danger sm" id="genPhotoDel">外す</button>
+        </div>
+
+        <div class="row" style="margin-top:16px">
+          <button class="btn" id="genBtn">画像を生成</button>
+        </div>
+        <div class="err-box" id="genErr" hidden></div>
+      </div>
+
+      <div class="panel stage" id="stagePanel">
+        <div class="canvas" id="canvas"><div class="ph">生成した画像がここに表示されます</div></div>
+        <div class="versions" id="versions"></div>
+        <div class="row" id="resultActions" hidden>
+          <button class="btn" id="saveBtn">ライブラリに保存</button>
+          <button class="btn ghost" id="dlBtn">ダウンロード</button>
+        </div>
+        <div id="replyBox" hidden>
+          <label for="replyText">修正リプライ</label>
+          <div class="row" style="flex-wrap:nowrap;align-items:flex-start">
+            <textarea id="replyText" style="min-height:64px" placeholder="例: 背景をもう少し暗くして、猫の目を青にして"></textarea>
+            <button class="btn" id="replyBtn" style="white-space:nowrap">修正する</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ライブラリ -->
+    <section id="tab-lib" hidden>
+      <div class="panel">
+        <h2>ライブラリ</h2>
+        <p class="hint">保存した画像の一覧です。クリックで拡大・修正・ダウンロードができます。</p>
+        <div class="grid" id="libGrid"></div>
+      </div>
+    </section>
+
+    <!-- 設定 -->
+    <section id="tab-set" hidden>
+      
+      <div class="panel">
+        <h2>このアプリの学習のしくみ</h2>
+        <p class="hint" style="margin:0">画像モデルそのものの重みを書き換える方式ではなく、読み込んだ画像からAIが「画風・題材・色づかいの特徴」を学習メモとして抽出し、代表画像といっしょに保存します。生成のたびにそのモデルの学習メモと代表画像が参照されるので、何個でも別々のモデルを作れます。追加学習を選ぶと、新しい画像を加えて学習メモを更新できます。</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="viewer"><div class="in">
+  <img id="viewImg" alt="">
+  <div><b id="viewTitle"></b><div class="hint" id="viewMeta" style="margin:0"></div></div>
+  <div class="row">
+    <button class="btn" id="viewEdit">この画像を修正する</button>
+    <button class="btn ghost" id="viewPhoto">写真として使う</button>
+    <button class="btn ghost" id="viewDl">ダウンロード</button>
+    <button class="btn danger" id="viewDel">削除</button>
+    <button class="btn ghost" id="viewClose" style="margin-left:auto">閉じる</button>
+  </div>
+</div></dialog>
+
+<script type="module">
+/* ---------- 基本ユーティリティ ---------- */
+/* ★★★ ここにOpenAI APIキーを直接貼り付けてください ★★★ */
+const API_KEY = 'ここにAPIキーを貼り付け';
+const IMAGE_MODEL = 'gpt-image-2.5-sunburst';  // 画像生成モデル(速さ重視なら gpt-image-2.5-flare)
+const IMAGE_QUALITY = 'medium';                // low / medium / high / xhigh / max / auto
+const TEXT_MODEL  = 'gpt-6-astra';             // 学習(画像解析)モデル
+const API_BASE = 'https://api.openai.com/v1';
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+function toast(msg, err=false){
+  const t = document.createElement('div');
+  t.className = 'toast' + (err ? ' err' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 2800);
+}
+function showErr(el, e){
+  el.hidden = !e;
+  if(e) el.textContent = 'うまくいきませんでした。\n' + (e.message || e);
+}
+
+/* ---------- IndexedDB ---------- */
+const dbp = new Promise((res, rej) => {
+  const r = indexedDB.open('atelier-learn', 1);
+  r.onupgradeneeded = () => {
+    r.result.createObjectStore('models', {keyPath:'id'});
+    r.result.createObjectStore('library', {keyPath:'id'});
+  };
+  r.onsuccess = () => res(r.result);
+  r.onerror = () => rej(r.error);
+});
+const tx = async (s, mode, fn) => {
+  const db = await dbp;
+  return new Promise((res, rej) => {
+    const t = db.transaction(s, mode);
+    const rq = fn(t.objectStore(s));
+    t.oncomplete = () => res(rq && rq.result);
+    t.onerror = () => rej(t.error);
+  });
+};
+const dbAll = s => tx(s, 'readonly', o => o.getAll());
+const dbPut = (s, v) => tx(s, 'readwrite', o => o.put(v));
+const dbDel = (s, id) => tx(s, 'readwrite', o => o.delete(id));
+
+/* ---------- 画像ヘルパー ---------- */
+function fileToImage(file, max=1024){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      const k = Math.min(1, max / Math.max(im.width, im.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      const dataUrl = c.toDataURL('image/jpeg', 0.88);
+      URL.revokeObjectURL(url);
+      res({ mime:'image/jpeg', data:dataUrl.split(',')[1], url:dataUrl });
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('画像を読み込めませんでした: ' + file.name)); };
+    im.src = url;
+  });
+}
+const toUrl = img => `data:${img.mime};base64,${img.data}`;
+function download(img, name){
+  const a = document.createElement('a');
+  a.href = toUrl(img);
+  a.download = (name || 'image') + '.' + (img.mime.split('/')[1] || 'png').replace('jpeg','jpg');
+  a.click();
+}
+function thumbFrom(img, size=160){
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => {
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      const k = Math.max(size / im.width, size / im.height);
+      const w = im.width * k, h = im.height * k;
+      c.getContext('2d').drawImage(im, (size - w) / 2, (size - h) / 2, w, h);
+      res(c.toDataURL('image/jpeg', 0.8));
+    };
+    im.src = toUrl(img);
+  });
+}
+
+/* ---------- OpenAI 呼び出し ---------- */
+const SIZES = { '1:1':'1024x1024', '3:4':'1152x1536', '4:3':'1536x1152', '9:16':'1152x2048', '16:9':'2048x1152' };
+function authHeader(){
+  const key = (API_KEY || '').trim();
+  if(!key || key === 'ここにAPIキーを貼り付け') throw new Error('index.html の先頭付近にある API_KEY に、OpenAI APIキーを書き込んでください。');
+  return { 'Authorization': 'Bearer ' + key };
+}
+async function call(path, init){
+  let r;
+  try { r = await fetch(API_BASE + path, init); }
+  catch(e){ throw new Error('通信に失敗しました。ネット接続を確認してください。'); }
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok){
+    const er = j.error || {};
+    let m = er.message || ('HTTP ' + r.status);
+    if(er.code === 'moderation_blocked') m += '\n(安全性チェックで止められました。プロンプトや画像を変えて試してください)';
+    throw new Error(m);
+  }
+  return j;
+}
+function b64ToBlob(b64, mime){
+  const bin = atob(b64), u = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return new Blob([u], { type:mime });
+}
+/* parts: [{text} | {mime, data}] */
+async function run(model, parts, wantImage, ar){
+  const auth = authHeader();
+  if(!wantImage){
+    // 画像を見て文章を返す(Responses API)
+    const content = parts.map(p => p.text !== undefined
+      ? { type:'input_text', text:p.text }
+      : { type:'input_image', image_url:`data:${p.mime};base64,${p.data}` });
+    const j = await call('/responses', {
+      method:'POST',
+      headers:{ ...auth, 'Content-Type':'application/json' },
+      body: JSON.stringify({ model, input:[{ role:'user', content }] })
+    });
+    let text = j.output_text || '';
+    if(!text && Array.isArray(j.output)){
+      text = j.output.flatMap(o => o.content || []).filter(c => typeof c.text === 'string').map(c => c.text).join('\n');
+    }
+    if(!text) throw new Error('応答が空でした。もう一度試してください。');
+    return { images:[], text };
+  }
+  // 画像生成: 画像なし→generations / 画像あり→edits
+  const images = [];
+  let prompt = '';
+  parts.forEach(p => {
+    if(p.text !== undefined) prompt += p.text + '\n';
+    else { images.push(p); prompt += `[添付画像${images.length}]\n`; }
+  });
+  if(images.length) prompt += `\n添付画像は番号順に入力されています。[添付画像N]はN番目の画像を指します。`;
+  const size = SIZES[ar] || 'auto';
+  let j;
+  if(!images.length){
+    j = await call('/images/generations', {
+      method:'POST',
+      headers:{ ...auth, 'Content-Type':'application/json' },
+      body: JSON.stringify({ model, prompt, size, quality:IMAGE_QUALITY, n:1 })
+    });
+  } else {
+    const fd = new FormData();
+    fd.append('model', model); fd.append('prompt', prompt);
+    fd.append('size', size); fd.append('quality', IMAGE_QUALITY);
+    images.forEach((im, i) => fd.append('image[]', b64ToBlob(im.data, im.mime), `ref${i+1}.${im.mime.includes('png') ? 'png' : 'jpg'}`));
+    j = await call('/images/edits', { method:'POST', headers:auth, body:fd });
+  }
+  const b64 = j.data && j.data[0] && j.data[0].b64_json;
+  if(!b64) throw new Error('応答に画像が含まれていませんでした。');
+  return { images:[{ mime:'image/png', data:b64 }], text:'' };
+}
+
+/* ---------- 状態 ---------- */
+let models = [], library = [];
+let selectedModelId = null;
+let trainImgs = [];
+let genPhoto = null;
+let thread = [];      // 生成バージョン
+let cur = -1;
+let viewerItem = null;
+
+const imgModel = () => IMAGE_MODEL;
+const txtModel = () => TEXT_MODEL;
+const selModel = () => models.find(m => m.id === selectedModelId) || null;
+
+/* ---------- タブ ---------- */
+function showTab(t){
+  $$('nav button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === t));
+  ['train','gen','lib','set'].forEach(k => $('#tab-' + k).hidden = k !== t);
+  if(t === 'lib') renderLib();
+}
+$$('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+/* ---------- モデル一覧 ---------- */
+function renderModels(){
+  const ul = $('#modelList');
+  ul.innerHTML = '';
+  if(!models.length){ ul.innerHTML = '<li class="empty">まだモデルがありません。画像を読み込んで学習させましょう。</li>'; }
+  models.sort((a,b) => b.updated - a.updated).forEach(m => {
+    const li = document.createElement('li');
+    li.innerHTML = `<button class="model" aria-pressed="${m.id === selectedModelId}"><div class="th" style="background-image:url(${m.thumb})"></div><div><b></b><span></span></div><span class="x" role="button" aria-label="削除" tabindex="0">×</span></button>`;
+    li.querySelector('b').textContent = m.name;
+    li.querySelector('div > span').textContent = `画像${m.count}枚・v${m.version}`;
+    const btn = li.firstChild;
+    btn.onclick = e => {
+      if(e.target.classList.contains('x')){ delModel(m); return; }
+      selectedModelId = selectedModelId === m.id ? null : m.id;
+      renderModels(); updateGenHint();
+    };
+    ul.appendChild(li);
+  });
+  const sel = $('#trainTarget');
+  const keep = sel.value;
+  sel.innerHTML = '<option value="">新しいモデルを作る</option>' + models.map(m => `<option value="${m.id}">${m.name.replace(/</g,'&lt;')} に追加学習</option>`).join('');
+  sel.value = models.some(m => m.id === keep) ? keep : '';
+}
+async function delModel(m){
+  if(!confirm(`「${m.name}」を削除しますか?`)) return;
+  await dbDel('models', m.id);
+  models = models.filter(x => x.id !== m.id);
+  if(selectedModelId === m.id) selectedModelId = null;
+  renderModels(); updateGenHint();
+}
+function updateGenHint(){
+  const m = selModel();
+  $('#genModelHint').textContent = m
+    ? `使用モデル: ${m.name}(v${m.version})— ${m.summary || '学習した特徴を反映します。'}`
+    : 'モデル未選択です。左の一覧から選ぶと、学習した特徴が反映されます。';
+}
+
+/* ---------- 学習 ---------- */
+function renderTrainThumbs(){
+  const box = $('#trainThumbs');
+  box.innerHTML = '';
+  trainImgs.forEach((im, i) => {
+    const d = document.createElement('div'); d.className = 'thumb';
+    d.innerHTML = `<img alt="学習画像${i+1}" src="${im.url}"><button aria-label="外す">×</button>`;
+    d.querySelector('button').onclick = () => { trainImgs.splice(i, 1); renderTrainThumbs(); };
+    box.appendChild(d);
+  });
+}
+async function addTrainFiles(files){
+  for(const f of files){
+    if(!f.type.startsWith('image/')) continue;
+    if(trainImgs.length >= 12){ toast('学習画像は12枚までです', true); break; }
+    try { trainImgs.push(await fileToImage(f)); } catch(e){ toast(e.message, true); }
+  }
+  renderTrainThumbs();
+}
+const drop = $('#trainDrop');
+drop.onclick = () => $('#trainFile').click();
+drop.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#trainFile').click(); } };
+$('#trainFile').onchange = e => { addTrainFiles(e.target.files); e.target.value = ''; };
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => addTrainFiles(e.dataTransfer.files));
+
+$('#trainTarget').onchange = e => {
+  const m = models.find(x => x.id === e.target.value);
+  if(m){ $('#trainName').value = m.name; $('#trainPrompt').value = m.prompt || ''; }
+};
+
+function setStep(n){
+  $$('#trainSteps li').forEach((li, i) => { li.className = i < n ? 'done' : i === n ? 'run' : ''; });
+}
+let trainedId = null;
+$('#trainBtn').onclick = async () => {
+  showErr($('#trainErr'), null);
+  const name = $('#trainName').value.trim();
+  const prompt = $('#trainPrompt').value.trim();
+  const target = models.find(m => m.id === $('#trainTarget').value);
+  if(!name) return showErr($('#trainErr'), 'モデルの名前を入力してください。');
+  if(!trainImgs.length) return showErr($('#trainErr'), '学習させる画像を1枚以上読み込んでください。');
+  $('#trainBtn').disabled = true;
+  $('#trainSteps').hidden = false; $('#trainResult').hidden = true;
+  try {
+    setStep(0);
+    await new Promise(r => setTimeout(r, 300));
+    setStep(1);
+    const instruction =
+`あなたは画像生成モデルの「学習担当」です。添付された画像すべてに共通する特徴(画風・線・色・光・質感・構図・題材・キャラクターの特徴・雰囲気)を丁寧に分析し、あとから画像生成AIにそのまま渡せる学習メモを作ってください。
+${target ? `\n既存の学習メモ(これを新しい画像の内容で更新・強化してください):\n${target.profile}\n` : ''}
+ユーザーが学んでほしいこと: ${prompt || '(指定なし。画像から自由に読み取ってください)'}
+
+次のJSONだけを返してください(コードフェンス不要):
+{"summary_ja":"日本語で60字以内の要約","profile_en":"英語で、画像生成時に再現すべき特徴を箇条書き風に200語以内で記述"}`;
+    const parts = [{ text:instruction }, ...trainImgs.map(i => ({ mime:i.mime, data:i.data }))];
+    const res = await run(txtModel(), parts, false);
+    let summary = '', profile = res.text;
+    try {
+      const j = JSON.parse(res.text.replace(/```json|```/g, '').trim());
+      summary = j.summary_ja || ''; profile = j.profile_en || res.text;
+    } catch(_){ summary = '画像から特徴を学習しました。'; }
+
+    setStep(2);
+    const refs = trainImgs.slice(0, 4).map(i => ({ mime:i.mime, data:i.data }));
+    const allRefs = target ? [...refs, ...(target.refs || [])].slice(0, 4) : refs;
+    const model = {
+      id: target ? target.id : uid(), name, prompt, summary, profile,
+      refs: allRefs, thumb: await thumbFrom(trainImgs[0]),
+      count: (target ? target.count : 0) + trainImgs.length,
+      version: (target ? target.version : 0) + 1,
+      created: target ? target.created : Date.now(), updated: Date.now()
+    };
+    await dbPut('models', model);
+    models = models.filter(m => m.id !== model.id); models.push(model);
+    selectedModelId = model.id; trainedId = model.id;
+    setStep(3);
+    renderModels(); updateGenHint();
+    $('#trainVer').textContent = 'v' + model.version;
+    $('#trainSummary').textContent = `「${model.name}」${summary}`;
+    $('#trainProfile').textContent = profile;
+    $('#trainResult').hidden = false;
+    trainImgs = []; renderTrainThumbs();
+  } catch(e){
+    showErr($('#trainErr'), e);
+    $$('#trainSteps li').forEach(li => li.className = '');
+  } finally { $('#trainBtn').disabled = false; }
+};
+$('#goGen').onclick = () => showTab('gen');
+
+/* ---------- 生成 ---------- */
+$('#genPhotoBtn').onclick = () => $('#genPhotoFile').click();
+$('#genPhotoFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if(!f) return;
+  try { setPhoto(await fileToImage(f, 1536)); } catch(err){ toast(err.message, true); }
+};
+function setPhoto(img){
+  genPhoto = img;
+  $('#genPhotoChip').hidden = !img;
+  if(img) $('#genPhotoImg').src = img.url || toUrl(img);
+}
+$('#genPhotoDel').onclick = () => setPhoto(null);
+
+function modelParts(m){
+  if(!m) return [];
+  return [
+    { text:`以下は学習済みモデル「${m.name}」の学習メモです。生成する画像はこの特徴(画風・色・質感・雰囲気)に従ってください。\n${m.profile}` },
+    ...(m.refs || []).flatMap((r, i) => [{ text:`学習済みの代表画像 ${i+1}:` }, { mime:r.mime, data:r.data }])
+  ];
+}
+function renderStage(){
+  const cv = $('#canvas');
+  if(cur < 0){
+    cv.innerHTML = '<div class="ph">生成した画像がここに表示されます</div>';
+    $('#resultActions').hidden = true; $('#replyBox').hidden = true; $('#versions').innerHTML = ''; return;
+  }
+  const v = thread[cur];
+  cv.innerHTML = ''; const im = document.createElement('img'); im.src = toUrl(v); im.alt = v.label; cv.appendChild(im);
+  $('#resultActions').hidden = false; $('#replyBox').hidden = false;
+  const box = $('#versions'); box.innerHTML = '';
+  thread.forEach((t, i) => {
+    const b = document.createElement('button');
+    b.setAttribute('aria-current', i === cur); b.title = t.label;
+    b.innerHTML = `<img alt="バージョン${i+1}" src="${toUrl(t)}">`;
+    b.onclick = () => { cur = i; renderStage(); };
+    box.appendChild(b);
+  });
+}
+function busy(on){
+  $('#genBtn').disabled = $('#replyBtn').disabled = on;
+  if(on) $('#canvas').innerHTML = '<div class="ph">生成しています…(30秒ほどかかることがあります)</div>';
+}
+$('#genBtn').onclick = async () => {
+  showErr($('#genErr'), null);
+  const prompt = $('#genPrompt').value.trim();
+  if(!prompt) return showErr($('#genErr'), 'プロンプトを入力してください。');
+  const m = selModel(), ar = $('#genAr').value;
+  const parts = [...modelParts(m)];
+  if(genPhoto){
+    parts.push({ text:'次の写真を土台にして(構図や被写体を活かして)画像を作ってください:' }, { mime:genPhoto.mime, data:genPhoto.data });
+  }
+  parts.push({ text:`画像を生成してください。\n内容: ${prompt}\n縦横比: ${ar}` });
+  busy(true);
+  try {
+    const res = await run(imgModel(), parts, true, ar);
+    thread = [{ ...res.images[0], label:prompt, prompt, modelName:m ? m.name : '' }];
+    cur = 0; renderStage();
+    if(res.text) toast(res.text.slice(0, 80));
+  } catch(e){ showErr($('#genErr'), e); renderStage(); }
+  finally { busy(false); }
+};
+$('#replyBtn').onclick = async () => {
+  showErr($('#genErr'), null);
+  const reply = $('#replyText').value.trim();
+  if(!reply) return showErr($('#genErr'), '修正してほしい内容を入力してください。');
+  const base = thread[cur], m = selModel();
+  const parts = [
+    ...modelParts(m),
+    { text:'次の画像を、下の指示どおりに修正した新しい画像を生成してください。指示されていない部分と全体の画風はできるだけ保ってください。' },
+    { mime:base.mime, data:base.data },
+    { text:`修正の指示: ${reply}\n縦横比: ${$('#genAr').value}` }
+  ];
+  busy(true);
+  try {
+    const res = await run(imgModel(), parts, true, $('#genAr').value);
+    thread.push({ ...res.images[0], label:reply, prompt:`${base.prompt} → ${reply}`, modelName:base.modelName });
+    cur = thread.length - 1; $('#replyText').value = ''; renderStage();
+  } catch(e){ showErr($('#genErr'), e); renderStage(); }
+  finally { busy(false); }
+};
+$('#saveBtn').onclick = async () => {
+  const v = thread[cur];
+  const item = { id:uid(), mime:v.mime, data:v.data, prompt:v.prompt, modelName:v.modelName, created:Date.now() };
+  await dbPut('library', item); library.push(item);
+  toast('ライブラリに保存しました');
+};
+$('#dlBtn').onclick = () => download(thread[cur], 'atelier-' + Date.now());
+
+/* ---------- ライブラリ ---------- */
+function renderLib(){
+  const g = $('#libGrid'); g.innerHTML = '';
+  if(!library.length){ g.innerHTML = '<div class="empty" style="grid-column:1/-1">保存した画像はまだありません。生成した画像の「ライブラリに保存」で追加できます。</div>'; return; }
+  [...library].sort((a,b) => b.created - a.created).forEach(it => {
+    const b = document.createElement('button'); b.className = 'card';
+    b.innerHTML = `<img alt="" src="${toUrl(it)}"><div><b></b><span></span></div>`;
+    b.querySelector('b').textContent = it.prompt;
+    b.querySelector('span').textContent = (it.modelName || 'モデルなし') + ' ・ ' + new Date(it.created).toLocaleDateString('ja-JP');
+    b.onclick = () => openViewer(it);
+    g.appendChild(b);
+  });
+}
+function openViewer(it){
+  viewerItem = it;
+  $('#viewImg').src = toUrl(it);
+  $('#viewTitle').textContent = it.prompt;
+  $('#viewMeta').textContent = (it.modelName || 'モデルなし') + ' ・ ' + new Date(it.created).toLocaleString('ja-JP');
+  $('#viewer').showModal();
+}
+$('#viewClose').onclick = () => $('#viewer').close();
+$('#viewDl').onclick = () => download(viewerItem, 'atelier-' + viewerItem.id);
+$('#viewDel').onclick = async () => {
+  if(!confirm('この画像を削除しますか?')) return;
+  await dbDel('library', viewerItem.id);
+  library = library.filter(x => x.id !== viewerItem.id);
+  $('#viewer').close(); renderLib();
+};
+$('#viewEdit').onclick = () => {
+  thread = [{ mime:viewerItem.mime, data:viewerItem.data, label:viewerItem.prompt, prompt:viewerItem.prompt, modelName:viewerItem.modelName }];
+  cur = 0; $('#viewer').close(); showTab('gen'); renderStage(); $('#replyText').focus();
+};
+$('#viewPhoto').onclick = () => { setPhoto({ mime:viewerItem.mime, data:viewerItem.data }); $('#viewer').close(); showTab('gen'); toast('写真として読み込みました'); };
+
+/* ---------- 起動 ---------- */
+(async () => {
+  models = await dbAll('models'); library = await dbAll('library');
+  renderModels(); updateGenHint(); renderStage();
+})();
+</script>
+</body>
+</html>

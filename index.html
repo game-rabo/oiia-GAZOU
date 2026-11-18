@@ -240,6 +240,12 @@ dialog img{max-width:100%;max-height:62vh;margin:0 auto;display:block;border-rad
     <section id="tab-set" hidden>
       
       <div class="panel">
+        <h2>接続診断</h2>
+        <p class="hint">通信エラーが出るときに押してください。回線・ブロック・APIキーのどこに問題があるかを調べます。</p>
+        <div class="row"><button class="btn" id="diagBtn" type="button">接続をテスト</button></div>
+        <div class="profile" id="diagOut" hidden></div>
+      </div>
+      <div class="panel">
         <h2>このアプリの学習のしくみ</h2>
         <p class="hint" style="margin:0">画像モデルそのものの重みを書き換える方式ではなく、読み込んだ画像からAIが「画風・題材・色づかいの特徴」を学習メモとして抽出し、代表画像といっしょに保存します。生成のたびにそのモデルの学習メモと代表画像が参照されるので、何個でも別々のモデルを作れます。追加学習を選ぶと、新しい画像を加えて学習メモを更新できます。</p>
       </div>
@@ -352,6 +358,7 @@ const SIZES = { '1:1':'1024x1024', '3:4':'1152x1536', '4:3':'1536x1152', '9:16':
 function authHeader(){
   const key = (API_KEY || '').trim();
   if(!key || key === 'ここにAPIキーを貼り付け') throw new Error('index.html の先頭付近にある API_KEY に、OpenAI APIキーを書き込んでください。');
+  if(!/^[\x21-\x7E]+$/.test(key)) throw new Error('API_KEY に全角文字・空白・改行が混ざっています。キーだけを半角で貼り付け直してください。');
   return { 'Authorization': 'Bearer ' + key };
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -817,6 +824,34 @@ $('#viewEdit').onclick = () => {
   cur = 0; $('#viewer').close(); showTab('gen'); renderStage(); $('#replyText').focus();
 };
 $('#viewPhoto').onclick = () => { setPhoto({ mime:viewerItem.mime, data:viewerItem.data }); $('#viewer').close(); showTab('gen'); toast('写真として読み込みました'); };
+
+/* ---------- 接続診断 ---------- */
+$('#diagBtn').onclick = async () => {
+  const out = $('#diagOut'), lines = [];
+  const log = t => { lines.push(t); out.textContent = lines.join('\n'); };
+  out.hidden = false; out.textContent = ''; $('#diagBtn').disabled = true;
+  try {
+    log(`1. ブラウザの回線状態: ${navigator.onLine ? 'オンライン' : 'オフライン(回線が切れています)'}`);
+    log(`2. 開いている場所: ${location.protocol === 'file:' ? 'ファイルを直接開いています(通常は問題ありません)' : location.protocol + '//' + location.host}`);
+    try {
+      await fetch('https://www.gstatic.com/generate_204', { mode:'no-cors', cache:'no-store' });
+      log('3. 一般のインターネット(Google): 接続できました');
+    } catch(e){ log('3. 一般のインターネット(Google): 接続できません → Wi-Fi・回線側の問題の可能性が高いです'); }
+    let key;
+    try { key = authHeader(); log('4. APIキーの形式: 問題ありません'); }
+    catch(e){ log('4. APIキーの形式: ' + e.message); return; }
+    try {
+      const r = await fetch(API_BASE + '/models', { headers:key, cache:'no-store' });
+      if(r.ok) log('5. OpenAIへの接続: 成功(キーも有効です)');
+      else if(r.status === 401) log('5. OpenAIへの接続: 届きましたが、APIキーが無効です(401)。キーを作り直して貼り付けてください');
+      else if(r.status === 429) log('5. OpenAIへの接続: 届きましたが、利用上限または残高不足の可能性があります(429)');
+      else log(`5. OpenAIへの接続: 届きましたがエラーです(HTTP ${r.status})`);
+    } catch(e){
+      log(`5. OpenAIへの接続: 失敗(${e.name}: ${e.message})`);
+      log('   → 1〜3が正常なのにここだけ失敗する場合は、Wi-Fiではなく api.openai.com がブロックされています。VPN・広告ブロッカー・セキュリティソフト・学校や会社のネットワーク制限を確認してください。');
+    }
+  } finally { $('#diagBtn').disabled = false; }
+};
 
 /* ---------- 起動 ---------- */
 (async () => {

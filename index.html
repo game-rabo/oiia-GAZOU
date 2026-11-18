@@ -135,9 +135,16 @@ dialog img{max-width:100%;max-height:62vh;margin:0 auto;display:block;border-rad
         <label for="trainName">モデルの名前</label>
         <input type="text" id="trainName" placeholder="例: 水彩の猫イラスト">
 
-        <label>学習させる画像(1〜12枚)</label>
-        <div class="drop" id="trainDrop" tabindex="0" role="button" aria-label="画像を選ぶ">画像をここにドロップ、またはクリックして選択</div>
+        <label>学習させる画像(最大40枚)<span class="badge" id="trainCount" style="margin-left:8px">0 / 40</span></label>
+        <div class="drop" id="trainDrop" tabindex="0" role="button" aria-label="画像を選ぶ">画像をまとめてドロップ、またはクリックして複数選択(Ctrl+A で全選択)</div>
         <input type="file" id="trainFile" accept="image/*" multiple hidden>
+        <input type="file" id="trainFolderFile" accept="image/*" webkitdirectory multiple hidden>
+        <div class="row" style="margin-top:10px">
+          <button class="btn ghost sm" id="trainPick" type="button">まとめて選ぶ</button>
+          <button class="btn ghost sm" id="trainFolder" type="button">フォルダごと選ぶ</button>
+          <button class="btn danger sm" id="trainClear" type="button">全部外す</button>
+          <span class="hint" style="margin:0">コピーした画像は Ctrl+V で貼り付けもできます</span>
+        </div>
         <div class="thumbs" id="trainThumbs"></div>
 
         <label for="trainPrompt">学習プロンプト(何を学んでほしいか)</label>
@@ -464,6 +471,7 @@ function updateGenHint(){
 
 /* ---------- 学習 ---------- */
 function renderTrainThumbs(){
+  $('#trainCount').textContent = trainImgs.length + ' / 40';
   const box = $('#trainThumbs');
   box.innerHTML = '';
   trainImgs.forEach((im, i) => {
@@ -473,18 +481,34 @@ function renderTrainThumbs(){
     box.appendChild(d);
   });
 }
+const MAX_TRAIN = 40;
 async function addTrainFiles(files){
-  for(const f of files){
-    if(!f.type.startsWith('image/')) continue;
-    if(trainImgs.length >= 12){ toast('学習画像は12枚までです', true); break; }
-    try { trainImgs.push(await fileToImage(f)); } catch(e){ toast(e.message, true); }
+  const imgs = [...files].filter(f => f.type.startsWith('image/'));
+  if(!imgs.length) return;
+  const room = Math.max(MAX_TRAIN - trainImgs.length, 0);
+  if(imgs.length > room) toast(`上限${MAX_TRAIN}枚のため、${room}枚だけ追加しました`, true);
+  const take = imgs.slice(0, room);
+  let failed = 0;
+  for(let i = 0; i < take.length; i += 8){          // 8枚ずつ並列で読み込み
+    const res = await Promise.allSettled(take.slice(i, i + 8).map(f => fileToImage(f, 768)));
+    res.forEach(r => r.status === 'fulfilled' ? trainImgs.push(r.value) : failed++);
+    renderTrainThumbs();
   }
-  renderTrainThumbs();
+  if(failed) toast(`${failed}枚は読み込めませんでした`, true);
 }
 const drop = $('#trainDrop');
 drop.onclick = () => $('#trainFile').click();
 drop.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#trainFile').click(); } };
 $('#trainFile').onchange = e => { addTrainFiles(e.target.files); e.target.value = ''; };
+$('#trainFolderFile').onchange = e => { addTrainFiles(e.target.files); e.target.value = ''; };
+$('#trainPick').onclick = () => $('#trainFile').click();
+$('#trainFolder').onclick = () => $('#trainFolderFile').click();
+$('#trainClear').onclick = () => { trainImgs = []; renderTrainThumbs(); };
+document.addEventListener('paste', e => {
+  if($('#tab-train').hidden) return;
+  const fs = [...(e.clipboardData ? e.clipboardData.files : [])];
+  if(fs.length){ e.preventDefault(); addTrainFiles(fs); }
+});
 ['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
 ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
 drop.addEventListener('drop', e => addTrainFiles(e.dataTransfer.files));

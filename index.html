@@ -267,12 +267,14 @@ dialog img{max-width:100%;max-height:62vh;margin:0 auto;display:block;border-rad
 
 <script type="module">
 /* ---------- 基本ユーティリティ ---------- */
-/* ★★★ ここにOpenAI APIキーを直接貼り付けてください ★★★ */
-const API_KEY = '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';
+/* OpenAIのAPIキーはコードに書きません。Supabaseの秘密(OPENAI_API_KEY)に保存し、
+   Edge Function「clever-endpoint」経由で呼び出します。 */
+const SUPABASE_URL = 'https://iiuthgvlpotascthghpx.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_PjGrdOxqMWOPgI48vnuX2g_1suUw68k';  // 公開用キー(公開されても安全な種類)
+const API_BASE = SUPABASE_URL + '/functions/v1/clever-endpoint';
 const IMAGE_MODEL = 'gpt-image-2.5-sunburst';  // 画像生成モデル(速さ重視なら gpt-image-2.5-flare)
 const IMAGE_QUALITY = 'medium';                // low / medium / high / xhigh / max / auto
 const TEXT_MODEL  = 'gpt-6-astra';             // 学習(画像解析)モデル
-const API_BASE = 'https://api.openai.com/v1';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -356,10 +358,7 @@ function thumbFrom(img, size=160){
 /* ---------- OpenAI 呼び出し ---------- */
 const SIZES = { '1:1':'1024x1024', '3:4':'1152x1536', '4:3':'1536x1152', '9:16':'1152x2048', '16:9':'2048x1152' };
 function authHeader(){
-  const key = (API_KEY || '').trim();
-  if(!key || key === 'ここにAPIキーを貼り付け') throw new Error('index.html の先頭付近にある API_KEY に、OpenAI APIキーを書き込んでください。');
-  if(!/^[\x21-\x7E]+$/.test(key)) throw new Error('API_KEY に全角文字・空白・改行が混ざっています。キーだけを半角で貼り付け直してください。');
-  return { 'Authorization': 'Bearer ' + key };
+  return { 'apikey':SUPABASE_KEY, 'Authorization':'Bearer ' + SUPABASE_KEY };
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function call(path, init){
@@ -374,7 +373,10 @@ async function call(path, init){
       clearTimeout(timer);
       if(r.ok) return j;
       const er = j.error || {};
-      let m = er.message || ('HTTP ' + r.status);
+      let m = er.message || j.message || ('HTTP ' + r.status);
+      if(r.status === 404) m += '\n(Supabaseに Edge Function「clever-endpoint」がデプロイされていない可能性があります)';
+      if(r.status === 401 && !er.message) m += '\n(デプロイ時に --no-verify-jwt を付けたか確認してください)';
+      if(r.status === 500 && /OPENAI_API_KEY/.test(m)) m += '\n(SupabaseのSecretsに OPENAI_API_KEY を登録してください)';
       if(er.code === 'moderation_blocked') m += '\n(安全性チェックで止められました。プロンプトや画像を変えて試してください)';
       if([429,500,502,503,504].includes(r.status) && er.code !== 'insufficient_quota' && a < MAX){
         toast(`サーバーが混み合っています。再試行します(${a}/${MAX-1})`);
@@ -386,7 +388,7 @@ async function call(path, init){
       if(e.name === 'AbortError') throw new Error('時間がかかりすぎたため中止しました(4分)。回線が遅い可能性があります。画像の枚数や大きさを減らして試してください。');
       if(e.name === 'TypeError'){
         if(a < MAX){ toast(`通信が切れました。再試行します(${a}/${MAX-1})`); await sleep(2000 * a); continue; }
-        throw new Error(`通信に失敗しました(${e.message})。\n考えられる原因: 回線が不安定/VPN・広告ブロッカー・セキュリティソフトが api.openai.com をブロックしている/一度に送る画像が多すぎる。\n回線を変える、拡張機能を切る、画像を減らす、のどれかを試してください。`);
+        throw new Error(`通信に失敗しました(${e.message})。\n考えられる原因: 回線が不安定/VPN・広告ブロッカー・セキュリティソフトが supabase.co をブロックしている/一度に送る画像が多すぎる。\n回線を変える、拡張機能を切る、画像を減らす、のどれかを試してください。`);
       }
       throw e;
     }
@@ -837,18 +839,17 @@ $('#diagBtn').onclick = async () => {
       await fetch('https://www.gstatic.com/generate_204', { mode:'no-cors', cache:'no-store' });
       log('3. 一般のインターネット(Google): 接続できました');
     } catch(e){ log('3. 一般のインターネット(Google): 接続できません → Wi-Fi・回線側の問題の可能性が高いです'); }
-    let key;
-    try { key = authHeader(); log('4. APIキーの形式: 問題ありません'); }
-    catch(e){ log('4. APIキーの形式: ' + e.message); return; }
+    log('4. 接続先: Supabase Edge Function(clever-endpoint)経由でOpenAIを呼びます');
     try {
-      const r = await fetch(API_BASE + '/models', { headers:key, cache:'no-store' });
-      if(r.ok) log('5. OpenAIへの接続: 成功(キーも有効です)');
-      else if(r.status === 401) log('5. OpenAIへの接続: 届きましたが、APIキーが無効です(401)。キーを作り直して貼り付けてください');
-      else if(r.status === 429) log('5. OpenAIへの接続: 届きましたが、利用上限または残高不足の可能性があります(429)');
-      else log(`5. OpenAIへの接続: 届きましたがエラーです(HTTP ${r.status})`);
+      const r = await fetch(API_BASE + '/models', { headers:authHeader(), cache:'no-store' });
+      if(r.ok) log('5. OpenAIへの接続: 成功(SupabaseのOPENAI_API_KEYも有効です)');
+      else if(r.status === 404) log('5. 失敗(404): Edge Function「clever-endpoint」が見つかりません。デプロイされているか確認してください');
+      else if(r.status === 401) log('5. 失敗(401): SupabaseのOPENAI_API_KEYが無効、またはデプロイ時に --no-verify-jwt が付いていません。OpenAIで新しいキーを作ってSecretsを更新してください');
+      else if(r.status === 429) log('5. 届きましたが、OpenAIの利用上限または残高不足の可能性があります(429)');
+      else log(`5. 届きましたがエラーです(HTTP ${r.status}): ` + (await r.text()).slice(0, 200));
     } catch(e){
-      log(`5. OpenAIへの接続: 失敗(${e.name}: ${e.message})`);
-      log('   → 1〜3が正常なのにここだけ失敗する場合は、Wi-Fiではなく api.openai.com がブロックされています。VPN・広告ブロッカー・セキュリティソフト・学校や会社のネットワーク制限を確認してください。');
+      log(`5. 接続失敗(${e.name}: ${e.message})`);
+      log('   → 1〜3が正常なのにここだけ失敗する場合は、Wi-Fiではなく supabase.co がブロックされているか、Edge Functionが未デプロイです。');
     }
   } finally { $('#diagBtn').disabled = false; }
 };

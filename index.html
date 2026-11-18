@@ -267,7 +267,7 @@ dialog img{max-width:100%;max-height:62vh;margin:0 auto;display:block;border-rad
 
 <script type="module">
 /* ---------- 基本ユーティリティ ---------- */
-/* OpenAIのAPIキーはコードに書きません。Supabaseの秘密(OPENAI_API_KEY)に保存し、
+/* OpenAIのAPIキーはコードに書きません。Supabaseの秘密(Gemini_API_KEY)に保存し、
    Edge Function「clever-endpoint」経由で呼び出します。 */
 const SUPABASE_URL = 'https://iiuthgvlpotascthghpx.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_PjGrdOxqMWOPgI48vnuX2g_1suUw68k';  // 公開用キー(公開されても安全な種類)
@@ -376,7 +376,7 @@ async function call(path, init){
       let m = er.message || j.message || ('HTTP ' + r.status);
       if(r.status === 404) m += '\n(Supabaseに Edge Function「clever-endpoint」がデプロイされていない可能性があります)';
       if(r.status === 401 && !er.message) m += '\n(デプロイ時に --no-verify-jwt を付けたか確認してください)';
-      if(r.status === 500 && /OPENAI_API_KEY/.test(m)) m += '\n(SupabaseのSecretsに OPENAI_API_KEY を登録してください)';
+      if(r.status === 500 && /Secrets/.test(m)) m += '\n(SupabaseのSecrets(Gemini_API_KEY)に、OpenAIのキーを登録してください)';
       if(er.code === 'moderation_blocked') m += '\n(安全性チェックで止められました。プロンプトや画像を変えて試してください)';
       if([429,500,502,503,504].includes(r.status) && er.code !== 'insufficient_quota' && a < MAX){
         toast(`サーバーが混み合っています。再試行します(${a}/${MAX-1})`);
@@ -842,9 +842,9 @@ $('#diagBtn').onclick = async () => {
     log('4. 接続先: Supabase Edge Function(clever-endpoint)経由でOpenAIを呼びます');
     try {
       const r = await fetch(API_BASE + '/models', { headers:authHeader(), cache:'no-store' });
-      if(r.ok) log('5. OpenAIへの接続: 成功(SupabaseのOPENAI_API_KEYも有効です)');
+      if(r.ok) log('5. OpenAIへの接続: 成功(SupabaseのGemini_API_KEYも有効です)');
       else if(r.status === 404) log('5. 失敗(404): Edge Function「clever-endpoint」が見つかりません。デプロイされているか確認してください');
-      else if(r.status === 401) log('5. 失敗(401): SupabaseのOPENAI_API_KEYが無効、またはデプロイ時に --no-verify-jwt が付いていません。OpenAIで新しいキーを作ってSecretsを更新してください');
+      else if(r.status === 401) log('5. 失敗(401): SupabaseのGemini_API_KEYが無効、またはデプロイ時に --no-verify-jwt が付いていません。OpenAIで新しいキーを作ってSecretsを更新してください');
       else if(r.status === 429) log('5. 届きましたが、OpenAIの利用上限または残高不足の可能性があります(429)');
       else log(`5. 届きましたがエラーです(HTTP ${r.status}): ` + (await r.text()).slice(0, 200));
     } catch(e){

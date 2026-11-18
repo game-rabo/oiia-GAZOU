@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>アトリエ・ラーン — 学習できる画像生成AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap"></noscript>
 <style>
 :root{
   --paper:#eef0f6; --card:#fbfbfe; --ink:#1d2140; --sub:#5d6385; --line:#d5d9e8;
@@ -125,6 +126,11 @@ dialog img{max-width:100%;max-height:62vh;margin:0 auto;display:block;border-rad
   <main>
     <!-- 学習 -->
     <section id="tab-train">
+      <div class="panel" id="draftPanel" hidden>
+        <h2>下書き</h2>
+        <p class="hint">作り途中の学習を保存してあります。クリックで続きから再開できます。</p>
+        <ul class="models" id="draftList"></ul>
+      </div>
       <div class="panel">
         <h2>新しいAIモデルを学習させる</h2>
         <p class="hint">好きな絵柄・キャラ・写真の雰囲気が分かる画像を読み込み、何を学習してほしいかを書きます。</p>
@@ -152,11 +158,13 @@ dialog img{max-width:100%;max-height:62vh;margin:0 auto;display:block;border-rad
 
         <div class="row" style="margin-top:16px">
           <button class="btn" id="trainBtn">学習を開始</button>
-          <span class="hint" style="margin:0">画像の特徴をAIが読み取り、モデルとして保存します。</span>
+          <button class="btn ghost" id="draftSave" type="button">下書きを保存</button>
+          <button class="btn ghost" id="draftNew" type="button">新しく始める</button>
+          <span class="hint" style="margin:0" id="draftStatus">画像の特徴をAIが読み取り、モデルとして保存します。</span>
         </div>
         <ul class="steps" id="trainSteps" hidden>
           <li data-s="0"><i></i>画像を読み込み中</li>
-          <li data-s="1"><i></i>共通する特徴を学習中</li>
+          <li data-s="1"><i></i><span id="stepLearnText">共通する特徴を学習中</span></li>
           <li data-s="2"><i></i>モデルを保存中</li>
         </ul>
         <div class="err-box" id="trainErr" hidden></div>
@@ -278,10 +286,11 @@ function showErr(el, e){
 
 /* ---------- IndexedDB ---------- */
 const dbp = new Promise((res, rej) => {
-  const r = indexedDB.open('atelier-learn', 1);
+  const r = indexedDB.open('atelier-learn', 2);
   r.onupgradeneeded = () => {
-    r.result.createObjectStore('models', {keyPath:'id'});
-    r.result.createObjectStore('library', {keyPath:'id'});
+    ['models','library','drafts'].forEach(n => {
+      if(!r.result.objectStoreNames.contains(n)) r.result.createObjectStore(n, {keyPath:'id'});
+    });
   };
   r.onsuccess = () => res(r.result);
   r.onerror = () => rej(r.error);
@@ -345,18 +354,36 @@ function authHeader(){
   if(!key || key === 'ここにAPIキーを貼り付け') throw new Error('index.html の先頭付近にある API_KEY に、OpenAI APIキーを書き込んでください。');
   return { 'Authorization': 'Bearer ' + key };
 }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function call(path, init){
-  let r;
-  try { r = await fetch(API_BASE + path, init); }
-  catch(e){ throw new Error('通信に失敗しました。ネット接続を確認してください。'); }
-  const j = await r.json().catch(() => ({}));
-  if(!r.ok){
-    const er = j.error || {};
-    let m = er.message || ('HTTP ' + r.status);
-    if(er.code === 'moderation_blocked') m += '\n(安全性チェックで止められました。プロンプトや画像を変えて試してください)';
-    throw new Error(m);
+  const MAX = 3;
+  for(let a = 1; a <= MAX; a++){
+    if(navigator.onLine === false) throw new Error('オフラインです。ネットワークに接続してから、もう一度試してください。');
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 240000);
+    try {
+      const r = await fetch(API_BASE + path, { ...init, signal:ctl.signal });
+      const j = await r.json().catch(() => ({}));
+      clearTimeout(timer);
+      if(r.ok) return j;
+      const er = j.error || {};
+      let m = er.message || ('HTTP ' + r.status);
+      if(er.code === 'moderation_blocked') m += '\n(安全性チェックで止められました。プロンプトや画像を変えて試してください)';
+      if([429,500,502,503,504].includes(r.status) && er.code !== 'insufficient_quota' && a < MAX){
+        toast(`サーバーが混み合っています。再試行します(${a}/${MAX-1})`);
+        await sleep(2000 * a); continue;
+      }
+      throw new Error(m);
+    } catch(e){
+      clearTimeout(timer);
+      if(e.name === 'AbortError') throw new Error('時間がかかりすぎたため中止しました(4分)。回線が遅い可能性があります。画像の枚数や大きさを減らして試してください。');
+      if(e.name === 'TypeError'){
+        if(a < MAX){ toast(`通信が切れました。再試行します(${a}/${MAX-1})`); await sleep(2000 * a); continue; }
+        throw new Error(`通信に失敗しました(${e.message})。\n考えられる原因: 回線が不安定/VPN・広告ブロッカー・セキュリティソフトが api.openai.com をブロックしている/一度に送る画像が多すぎる。\n回線を変える、拡張機能を切る、画像を減らす、のどれかを試してください。`);
+      }
+      throw e;
+    }
   }
-  return j;
 }
 function b64ToBlob(b64, mime){
   const bin = atob(b64), u = new Uint8Array(bin.length);
@@ -415,6 +442,7 @@ async function run(model, parts, wantImage, ar){
 let models = [], library = [];
 let selectedModelId = null;
 let trainImgs = [];
+let drafts = [], draftId = null, draftTimer = null, dirty = false;
 let genPhoto = null;
 let thread = [];      // 生成バージョン
 let cur = -1;
@@ -471,6 +499,7 @@ function updateGenHint(){
 
 /* ---------- 学習 ---------- */
 function renderTrainThumbs(){
+  markDirty();
   $('#trainCount').textContent = trainImgs.length + ' / 40';
   const box = $('#trainThumbs');
   box.innerHTML = '';
@@ -535,15 +564,30 @@ $('#trainBtn').onclick = async () => {
     setStep(0);
     await new Promise(r => setTimeout(r, 300));
     setStep(1);
-    const instruction =
-`あなたは画像生成モデルの「学習担当」です。添付された画像すべてに共通する特徴(画風・線・色・光・質感・構図・題材・キャラクターの特徴・雰囲気)を丁寧に分析し、あとから画像生成AIにそのまま渡せる学習メモを作ってください。
-${target ? `\n既存の学習メモ(これを新しい画像の内容で更新・強化してください):\n${target.profile}\n` : ''}
-ユーザーが学んでほしいこと: ${prompt || '(指定なし。画像から自由に読み取ってください)'}
-
-次のJSONだけを返してください(コードフェンス不要):
-{"summary_ja":"日本語で60字以内の要約","profile_en":"英語で、画像生成時に再現すべき特徴を箇条書き風に200語以内で記述"}`;
-    const parts = [{ text:instruction }, ...trainImgs.map(i => ({ mime:i.mime, data:i.data }))];
-    const res = await run(txtModel(), parts, false);
+    const n = trainImgs.length, BATCH = 10;
+    const intent = prompt || '(指定なし。画像から自由に読み取ってください)';
+    const prev = target ? `\n既存の学習メモ(これを新しい画像の内容で更新・強化してください):\n${target.profile}\n` : '';
+    const head = `あなたは画像生成モデルの「学習担当」です。添付された画像すべてに共通する特徴(画風・線・色・光・質感・構図・題材・キャラクターの特徴・雰囲気)を丁寧に分析し、あとから画像生成AIにそのまま渡せる学習メモを作ってください。\n${prev}\nユーザーが学んでほしいこと: ${intent}\n\n`;
+    const tail = `次のJSONだけを返してください(コードフェンス不要):\n{"summary_ja":"日本語で60字以内の要約","profile_en":"英語で、画像生成時に再現すべき特徴を箇条書き風に200語以内で記述"}`;
+    const stepText = $('#stepLearnText');
+    let res;
+    if(n <= BATCH){
+      res = await run(txtModel(), [{ text:head + tail }, ...trainImgs.map(i => ({ mime:i.mime, data:i.data }))], false);
+    } else {
+      // 通信を安定させるため、10枚ずつに分けて分析してから統合する
+      const notes = [], total = Math.ceil(n / BATCH);
+      for(let b = 0; b < total; b++){
+        stepText.textContent = `共通する特徴を学習中(${b + 1}/${total}グループ)`;
+        const chunk = trainImgs.slice(b * BATCH, (b + 1) * BATCH);
+        const r = await run(txtModel(), [
+          { text:`添付の${chunk.length}枚の画像(全${n}枚のうち${b * BATCH + 1}〜${b * BATCH + chunk.length}枚目)に共通する特徴(画風・線・色・光・質感・構図・題材・キャラクター・雰囲気)を、英語の箇条書きで200語以内のメモにしてください。ユーザーが学んでほしいこと: ${intent}` },
+          ...chunk.map(i => ({ mime:i.mime, data:i.data }))
+        ], false);
+        notes.push(`[グループ${b + 1}]\n${r.text}`);
+      }
+      stepText.textContent = '特徴をまとめています';
+      res = await run(txtModel(), [{ text:head + `以下は画像をグループに分けて分析したメモです。すべてを統合して、全体に共通する特徴をまとめてください。\n\n${notes.join('\n\n')}\n\n` + tail }], false);
+    }
     let summary = '', profile = res.text;
     try {
       const j = JSON.parse(res.text.replace(/```json|```/g, '').trim());
@@ -569,12 +613,86 @@ ${target ? `\n既存の学習メモ(これを新しい画像の内容で更新�
     $('#trainSummary').textContent = `「${model.name}」${summary}`;
     $('#trainProfile').textContent = profile;
     $('#trainResult').hidden = false;
-    trainImgs = []; renderTrainThumbs();
+    await finishDraft();
+    trainImgs = []; renderTrainThumbs(); dirty = false;
   } catch(e){
     showErr($('#trainErr'), e);
     $$('#trainSteps li').forEach(li => li.className = '');
-  } finally { $('#trainBtn').disabled = false; }
+  } finally { $('#trainBtn').disabled = false; $('#stepLearnText').textContent = '共通する特徴を学習中'; }
 };
+/* ---------- 下書き ---------- */
+function markDirty(){ dirty = true; scheduleAutosave(); }
+function scheduleAutosave(){
+  if(!draftId) return;                       // 一度保存した下書きだけ自動保存
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => saveDraft(false), 1500);
+}
+async function saveDraft(manual){
+  clearTimeout(draftTimer);
+  const st = {
+    name:$('#trainName').value, prompt:$('#trainPrompt').value, target:$('#trainTarget').value,
+    imgs:trainImgs.map(i => ({ mime:i.mime, data:i.data }))
+  };
+  if(!st.name.trim() && !st.prompt.trim() && !st.imgs.length){ if(manual) toast('保存する内容がありません', true); return; }
+  const d = { id:draftId || uid(), ...st, title:st.name.trim() || '無題の下書き', updated:Date.now() };
+  try { await dbPut('drafts', d); }
+  catch(e){ toast('下書きを保存できませんでした(保存容量が足りない可能性があります)', true); return; }
+  draftId = d.id; dirty = false;
+  drafts = drafts.filter(x => x.id !== d.id); drafts.push(d);
+  renderDrafts();
+  $('#draftStatus').textContent = (manual ? '下書きを保存しました ' : '自動保存しました ') + new Date().toLocaleTimeString('ja-JP', { hour:'2-digit', minute:'2-digit' });
+  if(manual) toast('下書きを保存しました');
+}
+function renderDrafts(){
+  const ul = $('#draftList'); ul.innerHTML = '';
+  $('#draftPanel').hidden = !drafts.length;
+  [...drafts].sort((a, b) => b.updated - a.updated).forEach(d => {
+    const li = document.createElement('li');
+    li.innerHTML = '<button class="model" type="button"><div class="th"></div><div><b></b><span></span></div><span class="x" role="button" aria-label="削除" tabindex="0">×</span></button>';
+    const btn = li.firstChild;
+    btn.setAttribute('aria-pressed', d.id === draftId);
+    if(d.imgs[0]) btn.querySelector('.th').style.backgroundImage = `url(data:${d.imgs[0].mime};base64,${d.imgs[0].data})`;
+    btn.querySelector('b').textContent = d.title;
+    btn.querySelector('div > span').textContent = `画像${d.imgs.length}枚・${new Date(d.updated).toLocaleString('ja-JP', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })}`;
+    btn.onclick = e => e.target.classList.contains('x') ? delDraft(d) : openDraft(d);
+    ul.appendChild(li);
+  });
+}
+function openDraft(d){
+  if(dirty && trainImgs.length && draftId !== d.id && !confirm('いま編集中の内容は保存されていません。下書きを開くと置き換わります。続けますか?')) return;
+  clearTimeout(draftTimer);
+  trainImgs = d.imgs.map(i => ({ mime:i.mime, data:i.data, url:`data:${i.mime};base64,${i.data}` }));
+  $('#trainName').value = d.name; $('#trainPrompt').value = d.prompt;
+  $('#trainTarget').value = models.some(m => m.id === d.target) ? d.target : '';
+  draftId = d.id;
+  renderTrainThumbs(); renderDrafts();
+  dirty = false; clearTimeout(draftTimer);
+  $('#draftStatus').textContent = '下書きを開きました。編集すると自動で保存されます。';
+}
+async function delDraft(d){
+  if(!confirm(`下書き「${d.title}」を削除しますか?`)) return;
+  await dbDel('drafts', d.id);
+  drafts = drafts.filter(x => x.id !== d.id);
+  if(draftId === d.id){ draftId = null; clearTimeout(draftTimer); }
+  renderDrafts();
+}
+async function finishDraft(){      // 学習が完了したら下書きは不要
+  clearTimeout(draftTimer);
+  if(draftId){ await dbDel('drafts', draftId); drafts = drafts.filter(x => x.id !== draftId); draftId = null; renderDrafts(); }
+  $('#draftStatus').textContent = '画像の特徴をAIが読み取り、モデルとして保存します。';
+}
+$('#draftSave').onclick = () => saveDraft(true);
+$('#draftNew').onclick = () => {
+  if(dirty && (trainImgs.length || $('#trainName').value || $('#trainPrompt').value) && !confirm('保存していない内容は消えます。新しく始めますか?')) return;
+  clearTimeout(draftTimer); draftId = null; trainImgs = [];
+  $('#trainName').value = ''; $('#trainPrompt').value = ''; $('#trainTarget').value = '';
+  renderTrainThumbs(); renderDrafts(); dirty = false;
+  $('#draftStatus').textContent = '画像の特徴をAIが読み取り、モデルとして保存します。';
+};
+['#trainName', '#trainPrompt'].forEach(q => $(q).addEventListener('input', markDirty));
+$('#trainTarget').addEventListener('change', markDirty);
+window.addEventListener('beforeunload', e => { if(dirty && trainImgs.length){ e.preventDefault(); e.returnValue = ''; } });
+
 $('#goGen').onclick = () => showTab('gen');
 
 /* ---------- 生成 ---------- */
@@ -702,7 +820,7 @@ $('#viewPhoto').onclick = () => { setPhoto({ mime:viewerItem.mime, data:viewerIt
 
 /* ---------- 起動 ---------- */
 (async () => {
-  models = await dbAll('models'); library = await dbAll('library');
+  models = await dbAll('models'); library = await dbAll('library'); drafts = await dbAll('drafts'); renderDrafts();
   renderModels(); updateGenHint(); renderStage();
 })();
 </script>
